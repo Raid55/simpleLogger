@@ -1,8 +1,6 @@
 # simpleLogger
 a server side and client side logger
 
-lots of spelling mistakes, this is just a first run and a boilerplate, it will change over time
-
 
 ## TASK
 Logging is a big problem for any client-side app, more specifically there's a couple needs:
