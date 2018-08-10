@@ -1,7 +1,3 @@
-
-// env vars
-// const { } = require('../config');
-
 // importing modules
 const bodyParser = require('body-parser');
 const express    = require('express');
@@ -13,7 +9,6 @@ const app = express();
 
 // init http server
 const httpServer = require('http').createServer(app);
-
 
 // body parser
 app.use(bodyParser.json());
@@ -27,7 +22,6 @@ app.use(morgan(chalk.cyan(':status | :res[content-length] | :response-time ms'))
 app.use(morgan(chalk.grey('........................................')));
 app.use(morgan(' '));
 // end of logger info //
-
 
 // importing routes
 const routes = require('./routes');
