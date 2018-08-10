@@ -7,19 +7,19 @@ const fs = require('fs');
 class Logger {
   constructor(logsPath, clientID, interval, watchFiles, endpoint){
     // init variables
-    this.logsPath       = logsPath       || './logs';
-    this.clientID       = clientID       || Math.floor(Math.random() * 1000000000);
-    this.buffInterval   = interval       || 5555
+    this.logsPath       = logsPath       || './logs'; // path to all logs
+    this.clientID       = clientID       || Math.floor(Math.random() * 1000000000); // client ID 
+    this.buffInterval   = interval       || 5555 // interval in bytes that buffer can go to before being sent to server
 
     // folder watcher
-    this.watcher        = null;
+    this.watcher        = null; // folder watcher, gets set when .run() runs
 
     // Logger name -- to differentiate between logger logs and real logs
-    this.loggerName = "simpleLogger"
+    this.loggerName     = "simpleLogger" // name of logger for logger's logs
 
     // tmp file names
-    this.tmpBuff        = `${this.logsPath}/buff.tmp`;
-    this.backlog        = `${this.logsPath}/backlog.tmp`;
+    this.tmpBuff        = `${this.logsPath}/buff.tmp`; // buffers file that need tailing
+    this.backlog        = `${this.logsPath}/backlog.tmp`; // all logs that failed getting sent get placed here
 
     // watchFiles
     this.watchFiles     = watchFiles || ['chrome_debug.log', "hotkey_manager.log", "media_uploader.log", "obs_importer.log"];
@@ -135,7 +135,7 @@ class Logger {
   lineParser(filename, lines) {
     return lines.split('\n').map((el) => {
       return {
-        logFileName: filename,
+        logFilename: filename.split('.')[0],
         clientID: this.clientID,
         logLine: el
       }
@@ -202,7 +202,7 @@ class Logger {
   
     try {
       payload = JSON.stringify({
-        body: log_arr
+        logs: log_arr
       })
     }
     catch(err) {
