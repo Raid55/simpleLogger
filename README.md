@@ -60,7 +60,7 @@ This project at first seemed complicated. I was introduced to some new concepts 
 #### CLIENT SIDE
 If I have time I will document the client's flow here. Here is a flow chart:
 
-![alt text](https://imgur.com/a/ZwpDG5V)
+![screenshot](https://i.imgur.com/kFIb0HD.png)
 
 
 ### SETUP
