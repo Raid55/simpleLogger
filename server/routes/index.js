@@ -20,8 +20,10 @@ router.post('/', (req, res) => {
         console.log(err);
         res.status(400).send({success: false});
       }
-      else
+      else {
+        console.log("Write Successful |", req.body.logs.length, " New logs!")
         res.status(200).send({success: true});
+      }
     });
   }
   else {
