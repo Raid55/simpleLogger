@@ -39,9 +39,15 @@ class Logger {
       path: '/',
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Content-Length': 0
       }
+
     };
+  // binding this to functions that get called from callback
+  this.dumpToBacklog  = this.dumpToBacklog.bind(this);
+  this.theTransporter = this.theTransporter.bind(this);
+  this.lineParser     = this.lineParser.bind(this);
   }
 
   // the main run functions purpose is to keep track of the log folder
@@ -51,7 +57,7 @@ class Logger {
   // little sense. this function terminates when stop is called, closing the watcher
   async run() {
     this.watcher = fs.watch(this.logsPath);
-
+    console.log("Starting Logger...")
     // I know this function gets a bit callback helly but its an alpha
     // after a an hour or two of refactoring im sure it can be cleaner (ex. promisify everything)
     this.watcher
@@ -71,7 +77,7 @@ class Logger {
               
               // changed this up, now it runs through line parser and then gets
               // reattached as a string to be dumped in the buffer.
-              let jsonParsedLines = '\n'.join(this.lineParser(filename, chunk2Str))
+              let jsonParsedLines = this.parsedLinesToJSON(this.lineParser(filename, chunk2Str))
               
               // append to buffer file
               fs.appendFile(this.tmpBuff, jsonParsedLines, (err) => {
@@ -87,8 +93,8 @@ class Logger {
                 // we decide if we want to send the buffer to the server or wait for more logs
                 // this can be changed via interval to the developers choosing, to not make 1000 http
                 // requests a second every time there is a new log line
-                if (getFilesizeInBytes(this.tmpBuff) >= this.buffInterval)
-                  this.theTransporter(bbToArr(this.tmpBuff));
+                if (this.getFilesizeInBytes(this.tmpBuff) >= this.buffInterval)
+                  this.theTransporter(this.tmpBuff, this.bbToArr(this.tmpBuff));
               });
               // closing the stream
               tmpStream.close();
@@ -97,8 +103,9 @@ class Logger {
         }
         else if (eventType === 'rename' && /\d{8}-\d{6}.log$/.test(filename) && fs.existsSync(`${this.logsPath}/${filename}`)) {
           try {
-            let data = fs.readFileSync(`${this.logsPath}/${filename}`);
-            this.theTransporter(this.lineParser(filename, data.toString()));
+            let filePath = `${this.logsPath}/${filename}`
+            let data = fs.readFileSync(filePath);
+            this.theTransporter(filePath, this.lineParser(filename, data.toString()));
           }
           catch(err) {
             console.log(err)
@@ -111,11 +118,12 @@ class Logger {
       .on('error', (err) => {
         // send to server error log
         console.log(err);
+        console.log("Logger Offline...")
       })
       .on('close', () => {
         if (getFilesizeInBytes(this.tmpBuff) > 1)
-          this.theTransporter(bbToArr(this.tmpBuff));
-        this.theTransporter(bbToArr(this.backlog));
+          this.theTransporter(this.tmpBuff, bbToArr(this.tmpBuff));
+        this.theTransporter(this.backlog, bbToArr(this.backlog));
       })
   }
 
@@ -132,6 +140,15 @@ class Logger {
         logLine: el
       }
     })
+  }
+
+  // turns parsed lines back to storage format
+  // to be held in buffer or backlog
+  // extra new line for end of string, since join only put in between
+  // LOG_ARR: formated log arr
+  // RETURN: string that can be stored
+  parsedLinesToJSON(log_arr) {
+    return log_arr.map(el => JSON.stringify(el)).join('\n') + '\n';
   }
 
   // gets the size of a file in bytes
@@ -153,7 +170,14 @@ class Logger {
   bbToArr(file) {
     try {
       let data = fs.readFileSync(file);
-      return data.toString().split('\n').map(el => JSON.parse)
+      return data.toString().split('\n').map(el => {
+        try {
+          return JSON.parse(el)
+        }
+        catch(err) {
+          return null;
+        }
+      }).filter(el => el);
     }
     catch(err) {
       console.log(err);
@@ -166,34 +190,37 @@ class Logger {
   // theTransporters job is now a bit different, since http.request is async
   // i use the events to handle the deleting of the files, and dumping to backlog
   // this now does what sendLog did, and its all async
-  // log_arr: array of formated logs to send
+  // FILE: file path to delete it and also for backlog dump
+  // LOG_ARR: array of formated logs to send
   // RETURNS: null
-  theTransporter(log_arr) {  
+  theTransporter(file, log_arr) {  
     let payload;
+    let { dumpToBacklog, transport_options } = this;
   
     if (!log_arr || log_arr.length < 1)
       return;
   
     try {
       payload = JSON.stringify({
-        logs: log_arr
+        body: log_arr
       })
     }
     catch(err) {
       console.log(err);
       return;
     }
-    // console.log(payload)
+    // seting the content length, which is mandatory with http request
+    transport_options.headers['Content-Length'] = Buffer.byteLength(payload);
     // using http request for no dependencies
-    http.request(this.transport_options, (res) => {
+    let request = http.request(transport_options, (res) => {
       res.setEncoding('utf8');
       res
         .on('data', function (chunk) {
           // delete file once server responds with 200
           // other wise the server had a problem and we
           // need to backlog them
-          console.log(chunk)
-          if (chunk["success"] === true)
+          console.log("logs sent!")
+          if (res.statusCode === 200 && JSON.parse(chunk).success === true)
             fs.unlink(file, (err) => {
               if (err) 
                 console.log(err) 
@@ -201,37 +228,52 @@ class Logger {
                 console.log(`${file}: deleted`);
             });
           else
-            this.dumpToBacklog(file);
+            dumpToBacklog(file, log_arr);
 
-          // destroy http request
-          res.destroy();
+          // end http request
+          request.end();
         })
-        .on('error', (err) => {
-          // if there is an error then we dump to backlog
-          // so we back log them instead of deleting them
-          this.dumpToBacklog(file);
-          console.log(err)
-        })
-    }).write(payload);
+    });
+  
+    request.write(payload);
+  
+    request.on('error', (err) => {
+      // if there is an error then we dump to backlog
+      // so we back log them instead of deleting them
+      dumpToBacklog(file, log_arr);
+      console.log(err);
+      request.end();
+    })
   }
 
 
   // dumps file or buffer to backlog if failed to send to server
   // this is a safty so that we dont lose any logs since
   // we are deleting the files after trying to send them
-  // this file never gets deleted and will only 
-  // FILE: location and file name
-  dumpToBacklog(file) {
-    if (file === this.backlog)
+  // this file never gets deleted and will only
+  // FILE: to compare and see if its backlog file
+  // LOG_ARR: array of log parsed log lines
+  dumpToBacklog(file, log_arr) {
+    let { backlog } = this;
+
+    if (file === backlog)
       return;
   
-    let backlogStream = fs.createWriteStream(this.backlog, {flags: 'a'});
-    let fileStream = fs.createReadStream(file);
-
-    fileStream.pipe(backlogStream);
-
-    backlogStream.close();
-    fileStream.close();
+    let jsonParsedLines = this.parsedLinesToJSON(log_arr)
+    fs.appendFile(backlog, jsonParsedLines, (err) => {
+      if (err)
+        console.log(err)
+      else {
+        console.log("back logged...")
+        fs.unlink(file, (err) => {
+          if (err) 
+            console.log(err) 
+          else
+            console.log(`${file}: deleted`);
+        });
+      }
+    });
+  
   }
 
   // stops the bot once the app closes or whatever
