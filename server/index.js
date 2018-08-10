@@ -16,7 +16,7 @@ httpServer
     console.log(chalk.grey.bold('...\n'));
 	})
 	.on('error', err => {
-		console.log(chalk.bold.bgRed.white("***ERROR***")); /* eslint-disable-line babel/quotes */ // stings "" keys ''
+		console.log(chalk.bold.bgRed.white("***ERROR***"));
 		throw err;
 	});
 

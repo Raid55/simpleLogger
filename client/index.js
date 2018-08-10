@@ -1,6 +1,5 @@
-// NOW WITH LESS DEPENDENCIES!!! (meaning non, i understand there are requests libs out there
-// but i decided to make the client dependency free)
-const querystring = require('querystring');
+// NOW WITH LESS DEPENDENCIES!!! (meaning none, i understand there are requests libs out there
+// but i decided to make the client dependency free for portability, since node runs ok on windows)
 const http = require('http');
 const fs = require('fs');
 
@@ -9,13 +8,13 @@ class Logger {
     // init variables
     this.logsPath       = logsPath       || './logs'; // path to all logs
     this.clientID       = clientID       || Math.floor(Math.random() * 1000000000); // client ID 
-    this.buffInterval   = interval       || 5555 // interval in bytes that buffer can go to before being sent to server
+    this.buffInterval   = interval       || 5555; // interval in bytes that buffer can go to before being sent to server
 
     // folder watcher
     this.watcher        = null; // folder watcher, gets set when .run() runs
 
     // Logger name -- to differentiate between logger logs and real logs
-    this.loggerName     = "simpleLogger" // name of logger for logger's logs
+    this.loggerName     = "simpleLogger"; // name of logger for logger's logs
 
     // tmp file names
     this.tmpBuff        = `${this.logsPath}/buff.tmp`; // buffers file that need tailing
@@ -42,7 +41,6 @@ class Logger {
         'Content-Type': 'application/json',
         'Content-Length': 0
       }
-
     };
   // binding this to functions that get called from callback
   this.dumpToBacklog  = this.dumpToBacklog.bind(this);
@@ -57,7 +55,7 @@ class Logger {
   // little sense. this function terminates when stop is called, closing the watcher
   async run() {
     this.watcher = fs.watch(this.logsPath);
-    console.log("Starting Logger...")
+    console.log("Starting Logger...");
     // I know this function gets a bit callback helly but its an alpha
     // after a an hour or two of refactoring im sure it can be cleaner (ex. promisify everything)
     this.watcher
@@ -77,13 +75,13 @@ class Logger {
               
               // changed this up, now it runs through line parser and then gets
               // reattached as a string to be dumped in the buffer.
-              let jsonParsedLines = this.parsedLinesToJSON(this.lineParser(filename, chunk2Str))
+              let jsonParsedLines = this.parsedLinesToJSON(this.lineParser(filename, chunk2Str));
               
               // append to buffer file
               fs.appendFile(this.tmpBuff, jsonParsedLines, (err) => {
                 // errors are handled not to crash program but they dont log themselves...yet
                 if (err)
-                  console.log(err)
+                  console.log(err);
                 else
                   // this line ensures that once the content has been read, every byte goes in the counter
                   // so that next pass around it start right where it left off
@@ -103,12 +101,12 @@ class Logger {
         }
         else if (eventType === 'rename' && /\d{8}-\d{6}.log$/.test(filename) && fs.existsSync(`${this.logsPath}/${filename}`)) {
           try {
-            let filePath = `${this.logsPath}/${filename}`
+            let filePath = `${this.logsPath}/${filename}`;
             let data = fs.readFileSync(filePath);
             this.theTransporter(filePath, this.lineParser(filename, data.toString()));
           }
           catch(err) {
-            console.log(err)
+            console.log(err);
           }
         }
         else {
@@ -118,14 +116,15 @@ class Logger {
       .on('error', (err) => {
         // send to server error log
         console.log(err);
-        console.log("Logger Offline...")
+        console.log("Logger Offline...");
       })
       .on('close', () => {
-        if (getFilesizeInBytes(this.tmpBuff) > 1)
-          this.theTransporter(this.tmpBuff, bbToArr(this.tmpBuff));
-        this.theTransporter(this.backlog, bbToArr(this.backlog));
-      })
-  }
+        if (this.getFilesizeInBytes(this.tmpBuff) > 1)
+          this.theTransporter(this.tmpBuff, this.bbToArr(this.tmpBuff));
+        if (this.getFilesizeInBytes(this.backlog) > 1)
+          this.theTransporter(this.backlog, this.bbToArr(this.backlog));
+      });
+  };
 
   // lineParser parses the raw lines, they havent been split yet
   // it also parses it into the server format
@@ -139,8 +138,8 @@ class Logger {
         clientID: this.clientID,
         logLine: el
       }
-    })
-  }
+    });
+  };
 
   // turns parsed lines back to storage format
   // to be held in buffer or backlog
@@ -149,7 +148,7 @@ class Logger {
   // RETURN: string that can be stored
   parsedLinesToJSON(log_arr) {
     return log_arr.map(el => JSON.stringify(el)).join('\n') + '\n';
-  }
+  };
 
   // gets the size of a file in bytes
   // FILE: location and file name
@@ -161,7 +160,7 @@ class Logger {
       console.log(err);
       return 0;
     }
-  }
+  };
 
   // turns buff or backlog file into compliant arr for theTransporter
   // this function is called bbToPayload because it
@@ -172,7 +171,7 @@ class Logger {
       let data = fs.readFileSync(file);
       return data.toString().split('\n').map(el => {
         try {
-          return JSON.parse(el)
+          return JSON.parse(el);
         }
         catch(err) {
           return null;
@@ -183,7 +182,7 @@ class Logger {
       console.log(err);
       return null;
     }
-  }
+  };
 
   // i names this function the transporter based on a movie,
   // i think its funny to think jason statham is doing the http transporting...
@@ -203,7 +202,7 @@ class Logger {
     try {
       payload = JSON.stringify({
         logs: log_arr
-      })
+      });
     }
     catch(err) {
       console.log(err);
@@ -214,25 +213,24 @@ class Logger {
     // using http request for no dependencies
     let request = http.request(transport_options, (res) => {
       res.setEncoding('utf8');
-      res
-        .on('data', function (chunk) {
-          // delete file once server responds with 200
-          // other wise the server had a problem and we
-          // need to backlog them
-          console.log("logs sent!")
-          if (res.statusCode === 200 && JSON.parse(chunk).success === true)
-            fs.unlink(file, (err) => {
-              if (err) 
-                console.log(err) 
-              else
-                console.log(`${file}: deleted`);
-            });
-          else
-            dumpToBacklog(file, log_arr);
+      res.on('data', function (chunk) {
+        // delete file once server responds with 200
+        // other wise the server had a problem and we
+        // need to backlog them
+        console.log("logs sent!");
+        if (res.statusCode === 200 && JSON.parse(chunk).success === true)
+          fs.unlink(file, (err) => {
+            if (err) 
+              console.log(err);
+            else
+              console.log(`${file}: deleted`);
+          });
+        else
+          dumpToBacklog(file, log_arr);
 
-          // end http request
-          request.end();
-        })
+        // end http request
+        request.end();
+      });
     });
   
     request.write(payload);
@@ -243,8 +241,8 @@ class Logger {
       dumpToBacklog(file, log_arr);
       console.log(err);
       request.end();
-    })
-  }
+    });
+  };
 
 
   // dumps file or buffer to backlog if failed to send to server
@@ -259,12 +257,12 @@ class Logger {
     if (file === backlog)
       return;
   
-    let jsonParsedLines = this.parsedLinesToJSON(log_arr)
+    let jsonParsedLines = this.parsedLinesToJSON(log_arr);
     fs.appendFile(backlog, jsonParsedLines, (err) => {
       if (err)
-        console.log(err)
+        console.log(err);
       else {
-        console.log("back logged...")
+        console.log("back logged...");
         fs.unlink(file, (err) => {
           if (err) 
             console.log(err) 
@@ -274,18 +272,17 @@ class Logger {
       }
     });
   
-  }
+  };
 
   // stops the bot once the app closes or whatever
   // calling this ensures that there arent any unsent
   // logs in the buff or backlog, and also closes watcher
   async stop() {
-    this.watcher.close()
+    this.watcher.close();
     // finish sending all logs then send final all done logger log
-  }
+  };
 
-}
+};
 
 
-module.exports = Logger
-
+module.exports = Logger;
