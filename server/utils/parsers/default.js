@@ -4,7 +4,6 @@ module.exports = function(line) {
   return {
     time: null,
     level: null,
-    trigger: null,
-    msg: line
+    trigger: null
   }
 }
